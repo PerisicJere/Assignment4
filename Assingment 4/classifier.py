@@ -3,7 +3,8 @@ from transformers import AutoTokenizer, XLMRobertaForSequenceClassification, Ada
 import pandas as pd
 from tqdm import tqdm
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score,f1_score
+import matplotlib.pyplot as plt
 
 # Checking if we have cuda available, if so use cuda, else use cpu
 device = torch.cuda.is_available()
@@ -29,17 +30,21 @@ model.to(device)
 
 # input csv in df
 train_df = pd.read_csv('clean_lyrics.csv')
+optimizer = torch.optim.AdamW(model.parameters(), lr=1e-8, weight_decay=0.01)
 
-optimizer = AdamW(model.parameters(), lr=1e-5)
-epochs = 3
+# TODO: remove epochs and implement early stoppings keep epoch count
+epochs = 1
 max_seq_length = 128
 # splitting train, validation, and test data
-train_df, test_df = train_test_split(train_df, test_size= 0.1, random_state=42)
-train_df, val_df = train_test_split(train_df, test_size=0.11, random_state=42)
+train_df, val_df = train_test_split(train_df, test_size= 0.1, random_state=42)
+# parameters for early stopping
+patience = 5 
+best_val_accuracy = 0.0
+count_without_improvement = 0
 
-for epoch in range(epochs):
+while count_without_improvement < patience:
     model.train()
-    for index, row in tqdm(train_df.iterrows(), total=len(train_df), desc=f"Epoch {epoch+1}/{epochs} - Training"):
+    for index, row in tqdm(train_df.iterrows(), total=len(train_df), desc=f"Epoch {epochs} - Training"):
         lyrics = row['Lyrics']
         genre = row['Genre'].capitalize()
         label_id = label2id.get(genre)
@@ -47,7 +52,7 @@ for epoch in range(epochs):
             print(f"Label '{genre}' not found in label2id dictionary.")
             continue
         if not isinstance(lyrics, str):
-            print(f"Lyrics is not a string: {lyrics}")
+            print(f"Lyrics is not a string: {row['Song Title']}")
             continue
         inputs = tokenizer(lyrics, return_tensors='pt', max_length=max_seq_length, truncation=True, padding=True)
         inputs = {key: val.to(device) for key, val in inputs.items()}
@@ -56,13 +61,14 @@ for epoch in range(epochs):
         loss.backward()
         optimizer.step()
         optimizer.zero_grad()
-
+    
     model.eval()
-    correct_pred = 0
-    total_pred = 0
+
+    true_labels = []
+    predicted_labels = []
 
     with torch.no_grad():
-        for index, row in tqdm(val_df.iterrows(), total=len(val_df), desc=f"Epoch {epoch+1}/{epochs} - Validation"):
+        for index, row in tqdm(val_df.iterrows(), total=len(val_df), desc=f"Epoch {epochs} - Validation"):
             lyrics = row['Lyrics']
             genre = row['Genre'].capitalize()
             label_id = label2id.get(genre)
@@ -70,21 +76,65 @@ for epoch in range(epochs):
                 print(f"Label '{genre}' not found in label2id dictionary.")
                 continue
             if not isinstance(lyrics, str):
-                print(f"Lyrics is not a string: {lyrics}")
+                print(f"Lyrics is not a string: {row['Song Title']}")
                 continue
             inputs = tokenizer(lyrics, return_tensors='pt', max_length=max_seq_length, truncation=True, padding=True)
             inputs = {key: val.to(device) for key, val in inputs.items()}
             outputs = model(**inputs)
             logits = outputs.logits
-            _, predicted = torch.max(logits, 1)
-            total_pred += 1
-            if predicted == label_id:
-                correct_pred += 1
+            predicted = torch.softmax(logits, 1)
+            predicted_label_id = torch.argmax(predicted, axis=1).item()
+            true_labels.append(label_id)
+            predicted_labels.append(predicted_label_id)
+    epochs += 1
+    f1_scores = f1_score(true_labels, predicted_labels, average=None)
+    print(f'F1 Scores for each class: {f1_scores}')
+    accuracy = accuracy_score(true_labels, predicted_labels)
+    print(f'Validation Accuracy: {accuracy}')
 
-    val_accuracy = correct_pred/total_pred
-    print(f'Validation Accuracy: {val_accuracy}')
+    if accuracy > best_val_accuracy:
+        best_val_accuracy = accuracy
+        count_without_improvement = 0
+        torch.save(model.state_dict(), 'High_validation.pth')
+    else:
+        count_without_improvement += 1
+        if count_without_improvement >= patience:
+            print(f'Model did improve in patience cycle.')
+            break
 
+# load test csv in data frame
+test_df = pd.read_csv('test_data.csv')
+# loading best model from early stopping
+model.load_state_dict(torch.load('High_validation.pth'))
 
+# test fine tuned model
+model.eval()
+true_labels = []
+predicted_labels = []
 
+with torch.no_grad():
+    for index, row in tqdm(test_df.iterrows(), total=len(test_df), desc=f"Testing"):
+        lyrics = row['Lyrics']
+        genre = row['Genre'].capitalize()
+        label_id = label2id.get(genre)
+        if label_id is None:
+            print(f"Label {genre} not found")
+            continue
+        if not isinstance(lyrics, str):
+            print(f'Lyrics is of different type {lyrics}')
+            continue
+        inputs = tokenizer(lyrics, return_tensors='pt', max_length=max_seq_length, truncation=True,padding=True)
+        inputs = {key: val.to(device) for key, val in inputs.items()}
+        outputs = model(**inputs)
+        logits = outputs.logits
+        predicted = torch.softmax(logits, 1)
+        predicted_label_id = torch.argmax(predicted, axis=1).item()
+        true_labels.append(label_id)
+        predicted_labels.append(predicted_label_id)
+
+    f1_scores = f1_score(true_labels, predicted_labels, average=None)
+    print("F1 Scores for each class: {f1_scores}")
+    accuracy = accuracy_score(true_labels, predicted_labels)
+    print(f'Test Accuracy: {accuracy}')
 
 
