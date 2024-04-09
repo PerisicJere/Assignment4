@@ -3,9 +3,9 @@ import os, csv, re
 # some regex magic
 def clean_text(text):
 
-    text = re.sub(r'[^A-z0-9\n\t ]', '', text)
+    text = re.sub(r'[^A-z0-9\n\t ]', '', text).strip('\n')
     text = text.lower().strip()
-
+    text = re.sub(r'\s+', ' ', text)
     return text
 
 # cleans and combines training and validation data
@@ -39,7 +39,8 @@ def combine_test_data(input, output):
                 lyrics = clean_text(s.read())
                 song_title = re.sub(r'\.txt$', '', song)
                 genre = file
-                data.append((lyrics, song_title, genre))
+                if lyrics is not None:
+                    data.append((lyrics, song_title, genre))
     
     
     with open(output, 'w', newline='', encoding='utf-8') as ofile:
