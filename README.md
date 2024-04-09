@@ -22,7 +22,7 @@ Table 1: F1 scores on the validation set across epochs with varying learning rat
 | 3     | 0.24098| 0.41830| 0.53386| 0.52581|
 | 4     | 0.16549| 0.48184| 0.52480| 0.50137|
 
-![Plot](plot.png)
+![Plot](images\plot.png)
 
 Table 2: Testing the model to determine the best learning rate.
 
@@ -33,7 +33,7 @@ Table 2: Testing the model to determine the best learning rate.
 | 1e-5          | 0.57875| 0.42253 | 0.66976| 0.49122| 0.78260| 0.20481|
 | 5e-5          | 0.56140| 0.43333 | 0.63636| 0.49420| 0.78918| 0.19117|
 
-![Bar Chart](barchart.png)
+![Bar Chart](images\barchart.png)
 
 ## Run
 ```bash
